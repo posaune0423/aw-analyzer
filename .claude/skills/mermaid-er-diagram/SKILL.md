@@ -32,11 +32,11 @@ Use standard SQL-like types for clarity:
 
 ### Key Annotations
 
-| Annotation | Meaning        | Usage                                     |
-| ---------- | -------------- | ----------------------------------------- |
-| `PK`       | Primary Key    | Single column primary key                 |
-| `FK`       | Foreign Key    | References another table                  |
-| `UK`       | Unique Key     | Unique constraint                         |
+| Annotation | Meaning     | Usage                     |
+| ---------- | ----------- | ------------------------- |
+| `PK`       | Primary Key | Single column primary key |
+| `FK`       | Foreign Key | References another table  |
+| `UK`       | Unique Key  | Unique constraint         |
 
 ### Attribute Format
 

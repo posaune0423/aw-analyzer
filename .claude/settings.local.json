@@ -1,7 +1,5 @@
 {
   "permissions": {
-    "allow": [
-      "Skill(mermaid-er-diagram)"
-    ]
+    "allow": ["Skill(mermaid-er-diagram)"]
   }
 }

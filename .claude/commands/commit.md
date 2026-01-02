@@ -11,7 +11,7 @@ Do exactly this, non-interactively, from repo root.
    - infra → Cargo.toml, Cargo.lock, Makefile, docker/**, docker-compose.yml, .github/**
    - src → src/\*\*
    - proto → proto/\*\*
-   - tests → tests/\*\*, **/tests/\*\*
+   - tests → tests/\*\*, \*\*/tests/\*\*
    - docs → README.md, docs/\*\*
    - config → substreams.yaml, buf.gen.yaml, schema.sql
 

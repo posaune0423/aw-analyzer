@@ -9,17 +9,17 @@ Expert-level guidance for building production Substreams on Solana.
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
-| Initialize project | `substreams init` |
-| Build & package | `substreams build` |
-| Run with GUI | `substreams gui ./substreams.yaml <module> -e <endpoint>` |
-| Run streaming | `substreams run ./substreams.yaml <module> -e <endpoint>` |
-| Generate protobuf | `substreams protogen ./substreams.yaml` |
-| Package only | `substreams pack ./substreams.yaml` |
-| Inspect package | `substreams info ./substreams.yaml` |
-| Visualize DAG | `substreams graph ./substreams.yaml` |
-| Auth setup | `substreams auth` |
+| Task               | Command                                                   |
+| ------------------ | --------------------------------------------------------- |
+| Initialize project | `substreams init`                                         |
+| Build & package    | `substreams build`                                        |
+| Run with GUI       | `substreams gui ./substreams.yaml <module> -e <endpoint>` |
+| Run streaming      | `substreams run ./substreams.yaml <module> -e <endpoint>` |
+| Generate protobuf  | `substreams protogen ./substreams.yaml`                   |
+| Package only       | `substreams pack ./substreams.yaml`                       |
+| Inspect package    | `substreams info ./substreams.yaml`                       |
+| Visualize DAG      | `substreams graph ./substreams.yaml`                      |
+| Auth setup         | `substreams auth`                                         |
 
 ## Core Mental Model
 
@@ -36,6 +36,7 @@ Substreams is NOT:
 ```
 
 **Responsibility Split:**
+
 - **Substreams** → Extract facts, minimal state, emit DatabaseChanges
 - **Database (Postgres/Clickhouse)** → Aggregate, query, analyze
 - **Application layer** → Rules, alerts, time windows, USD rates
@@ -72,18 +73,19 @@ my-substreams/
 
 ## File Generation Map
 
-| Command | Generates | Location |
-|---------|-----------|----------|
-| `substreams build` | `.spkg` package | `./` root |
-| `substreams build` | Protobuf Rust code | `src/pb/` |
-| `substreams build` | WASM binary | `target/wasm32-unknown-unknown/release/` |
-| `substreams protogen` | Protobuf Rust code only | `src/pb/` |
-| `substreams init` | Project scaffold | Current directory |
-| `cargo build --target wasm32...` | WASM binary only | `target/` |
+| Command                          | Generates               | Location                                 |
+| -------------------------------- | ----------------------- | ---------------------------------------- |
+| `substreams build`               | `.spkg` package         | `./` root                                |
+| `substreams build`               | Protobuf Rust code      | `src/pb/`                                |
+| `substreams build`               | WASM binary             | `target/wasm32-unknown-unknown/release/` |
+| `substreams protogen`            | Protobuf Rust code only | `src/pb/`                                |
+| `substreams init`                | Project scaffold        | Current directory                        |
+| `cargo build --target wasm32...` | WASM binary only        | `target/`                                |
 
 ## Module Types
 
 ### map Module (Stateless)
+
 ```rust
 #[substreams::handlers::map]
 fn map_trades(block: Block) -> Result<Trades, Error> {
@@ -95,6 +97,7 @@ fn map_trades(block: Block) -> Result<Trades, Error> {
 **Use for:** Event extraction, filtering, normalization, DatabaseChanges
 
 ### store Module (Stateful)
+
 ```rust
 #[substreams::handlers::store]
 fn store_holder_count(trades: Trades, store: StoreAddInt64) {
@@ -110,7 +113,9 @@ fn store_holder_count(trades: Trades, store: StoreAddInt64) {
 ## Solana-Specific Patterns
 
 ### Unique Event Identification
+
 Solana requires composite keys (tx hash alone is NOT unique):
+
 ```rust
 fn event_key(sig: &str, ix_idx: u32, inner_idx: u32) -> String {
     format!("{}:{}:{}", sig, ix_idx, inner_idx)
@@ -118,6 +123,7 @@ fn event_key(sig: &str, ix_idx: u32, inner_idx: u32) -> String {
 ```
 
 ### Source Types
+
 ```yaml
 # For filtered blocks (recommended, 75% cost reduction)
 inputs:
@@ -133,7 +139,9 @@ inputs:
 ```
 
 ### holder_count Strategy
+
 Track Token Account balance changes (NOT transfers):
+
 ```rust
 // old_amount == 0 && new_amount > 0 → holder +1
 // old_amount > 0 && new_amount == 0 → holder -1
@@ -142,6 +150,7 @@ Track Token Account balance changes (NOT transfers):
 ## IDL Type-Safe Pattern
 
 ### Directory Structure
+
 ```
 src/idl/
 ├── mod.rs           # Re-exports
@@ -150,6 +159,7 @@ src/idl/
 ```
 
 ### mod.rs Pattern
+
 ```rust
 pub mod pump_fun;
 pub mod raydium_amm;
@@ -159,6 +169,7 @@ pub use raydium_amm::*;
 ```
 
 ### Decoding from IDL
+
 ```rust
 use borsh::BorshDeserialize;
 
@@ -180,9 +191,9 @@ pub const TRADE_EVENT_DISCRIMINATOR: [u8; 8] = [0xe4, 0x45, 0xa5, 0x2e, 0x51, 0x
 
 ## Common Endpoints
 
-| Network | Endpoint |
-|---------|----------|
-| Solana Mainnet | `mainnet.sol.streamingfast.io:443` |
+| Network        | Endpoint                                      |
+| -------------- | --------------------------------------------- |
+| Solana Mainnet | `mainnet.sol.streamingfast.io:443`            |
 | Solana (Pinax) | `solana-mainnet.substreams.pinax.network:443` |
 
 ## Debugging Workflow
@@ -190,6 +201,7 @@ pub const TRADE_EVENT_DISCRIMINATOR: [u8; 8] = [0xe4, 0x45, 0xa5, 0x2e, 0x51, 0x
 See `references/debug-guide.md` for detailed debugging procedures.
 
 ### Quick Debug Commands
+
 ```bash
 # GUI with block range
 substreams gui ./substreams.yaml map_trades \
@@ -209,6 +221,7 @@ substreams::log::debug!("Processing tx: {}", signature);
 ## Golden Rules
 
 ### ❌ NEVER DO
+
 1. Use `store` as a database
 2. Scan/enumerate store (no iteration support)
 3. Perform 24h aggregations in map
@@ -218,6 +231,7 @@ substreams::log::debug!("Processing tx: {}", signature);
 7. Assume tx hash uniquely identifies event
 
 ### ✅ ALWAYS DO
+
 1. Use natural keys (mint_address, signature:ix:inner_ix)
 2. Separate concerns: facts → Substreams, analysis → DB
 3. Track known mints only (avoid unbounded stores)

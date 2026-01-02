@@ -85,6 +85,7 @@ cargo clippy -- -W clippy::redundant_clone path/to/file.rs
 ### 3. Manual Review
 
 For semantic similarity, manual code review is recommended:
+
 - Look for similar function patterns
 - Check for repeated logic blocks
 - Identify common error handling patterns

@@ -35,7 +35,7 @@ modules:
   # ============================================
   # Map Modules (Stateless)
   # ============================================
-  
+
   - name: map_trades
     kind: map
     initialBlock: 280000000
@@ -126,10 +126,10 @@ sink:
 
 ```yaml
 package:
-  name: pump-fun-substreams    # Package name (used in .spkg filename)
-  version: v0.1.0              # Semantic version
-  url: https://github.com/...  # Optional: repository URL
-  doc: |                        # Optional: package documentation
+  name: pump-fun-substreams # Package name (used in .spkg filename)
+  version: v0.1.0 # Semantic version
+  url: https://github.com/... # Optional: repository URL
+  doc: | # Optional: package documentation
     Multi-line description...
 ```
 
@@ -138,11 +138,11 @@ package:
 ```yaml
 protobuf:
   files:
-    - events.proto             # Your proto files
+    - events.proto # Your proto files
     - database.proto
   importPaths:
-    - ./proto                  # Search paths for imports
-  
+    - ./proto # Search paths for imports
+
   # Alternative: use Buf Schema Registry
   descriptorSets:
     - module: buf.build/streamingfast/substreams-sink-database
@@ -153,18 +153,19 @@ protobuf:
 ```yaml
 binaries:
   default:
-    type: wasm/rust-v1         # WASM type
+    type: wasm/rust-v1 # WASM type
     file: ./target/wasm32-unknown-unknown/release/my_substreams.wasm
 ```
 
 ### network
 
 ```yaml
-network: solana-mainnet-beta   # Target network
+network: solana-mainnet-beta # Target network
+
 
 # Valid values:
 # - solana-mainnet-beta
-# - ethereum-mainnet  
+# - ethereum-mainnet
 # - polygon-mainnet
 # - etc.
 ```
@@ -175,10 +176,10 @@ network: solana-mainnet-beta   # Target network
 
 ```yaml
 - name: map_trades
-  kind: map                    # Stateless transformation
-  initialBlock: 280000000      # First block to process
+  kind: map # Stateless transformation
+  initialBlock: 280000000 # First block to process
   inputs:
-    - source: sf.solana.type.v2.Block  # Raw block input
+    - source: sf.solana.type.v2.Block # Raw block input
   output:
     type: proto:pump.v1.Trades # Output protobuf type
   doc: Optional documentation
@@ -188,12 +189,12 @@ network: solana-mainnet-beta   # Target network
 
 ```yaml
 - name: store_holders
-  kind: store                  # Stateful storage
+  kind: store # Stateful storage
   initialBlock: 280000000
-  updatePolicy: add            # add | set | set_if_not_exists | append | set_sum
-  valueType: int64             # int64 | float64 | bigint | bigdecimal | string | proto:...
+  updatePolicy: add # add | set | set_if_not_exists | append | set_sum
+  valueType: int64 # int64 | float64 | bigint | bigdecimal | string | proto:...
   inputs:
-    - map: map_trades          # Input from another module
+    - map: map_trades # Input from another module
 ```
 
 **Update Policies:**
@@ -223,9 +224,9 @@ network: solana-mainnet-beta   # Target network
   inputs:
     - map: map_trades
     - store: store_metadata
-      mode: get              # get | deltas
+      mode: get # get | deltas
     - store: store_counts
-      mode: deltas           # Receive changes only
+      mode: deltas # Receive changes only
 ```
 
 **Store Input Modes:**
@@ -245,6 +246,7 @@ params:
 ```
 
 In Rust:
+
 ```rust
 #[substreams::handlers::map]
 fn map_trades(params: String, blk: Block) -> Result<Trades, Error> {
@@ -254,6 +256,7 @@ fn map_trades(params: String, blk: Block) -> Result<Trades, Error> {
 ```
 
 Override at runtime:
+
 ```bash
 substreams run ... -p map_trades="program_id=DIFFERENT_PROGRAM"
 ```
@@ -265,7 +268,7 @@ Reuse modules from other packages:
 ```yaml
 imports:
   solana_common: https://github.com/streamingfast/substreams-solana-common/releases/download/v0.1.0/substreams-solana-common-v0.1.0.spkg
-  
+
 modules:
   - name: map_trades
     inputs:

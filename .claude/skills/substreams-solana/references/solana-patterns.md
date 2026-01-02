@@ -29,17 +29,17 @@ fn get_event_id(tx: &Transaction) -> String {
 
 // ✅ CORRECT - Include instruction indices
 fn get_event_id(
-    tx: &Transaction, 
-    ix_index: usize, 
+    tx: &Transaction,
+    ix_index: usize,
     inner_ix_index: Option<usize>
 ) -> String {
     match inner_ix_index {
-        Some(inner) => format!("{}:{}:{}", 
+        Some(inner) => format!("{}:{}:{}",
             bs58::encode(&tx.signature).into_string(),
             ix_index,
             inner
         ),
-        None => format!("{}:{}", 
+        None => format!("{}:{}",
             bs58::encode(&tx.signature).into_string(),
             ix_index
         ),
@@ -106,7 +106,7 @@ fn is_pump_instruction(ix: &CompiledInstruction, program_keys: &[Pubkey]) -> boo
 
 fn get_instruction_type(data: &[u8]) -> Option<&'static str> {
     if data.len() < 8 { return None; }
-    
+
     let disc = &data[0..8];
     match disc {
         d if d == CREATE_DISCRIMINATOR => Some("create"),
@@ -123,10 +123,10 @@ fn get_instruction_type(data: &[u8]) -> Option<&'static str> {
 
 ### Why Token Account State (not Transfer Instructions)
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| Transfer instructions | Simple | Noisy, incomplete, misses airdrops |
-| Token Account state | Authoritative | Slightly more complex |
+| Approach              | Pros          | Cons                               |
+| --------------------- | ------------- | ---------------------------------- |
+| Transfer instructions | Simple        | Noisy, incomplete, misses airdrops |
+| Token Account state   | Authoritative | Slightly more complex              |
 
 ### v1 Strategy (Token Account Granularity)
 
@@ -140,20 +140,20 @@ fn store_holder_count(
         if let Some(meta) = &tx.meta {
             // Compare pre/post token balances
             for (pre, post) in meta.pre_token_balances.iter()
-                .zip(meta.post_token_balances.iter()) 
+                .zip(meta.post_token_balances.iter())
             {
                 if pre.mint != post.mint { continue; }
-                
+
                 let pre_amount = parse_amount(&pre.ui_token_amount);
                 let post_amount = parse_amount(&post.ui_token_amount);
-                
+
                 let key = format!("hc:{}", pre.mint);
-                
+
                 // Zero → Non-zero: new holder
                 if pre_amount == 0 && post_amount > 0 {
                     store.add(1, &key, 1);
                 }
-                
+
                 // Non-zero → Zero: holder removed
                 if pre_amount > 0 && post_amount == 0 {
                     store.add(1, &key, -1);
@@ -263,7 +263,7 @@ fn get_account_at_index(
 
 // pump.fun buy instruction accounts (example)
 // 0: global state
-// 1: fee recipient  
+// 1: fee recipient
 // 2: mint
 // 3: bonding curve
 // 4: associated bonding curve
@@ -303,9 +303,9 @@ for tx in blk.transactions() {
 
 ### Common Solana Errors
 
-| Error | Meaning |
-|-------|---------|
-| `InstructionError` | Program execution failed |
+| Error                      | Meaning                              |
+| -------------------------- | ------------------------------------ |
+| `InstructionError`         | Program execution failed             |
 | `InsufficientFundsForRent` | Account would fall below rent-exempt |
-| `AccountNotFound` | Referenced account missing |
-| `ProgramFailedToComplete` | Compute budget exceeded |
+| `AccountNotFound`          | Referenced account missing           |
+| `ProgramFailedToComplete`  | Compute budget exceeded              |

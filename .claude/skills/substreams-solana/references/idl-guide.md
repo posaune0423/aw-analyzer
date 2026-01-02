@@ -122,7 +122,7 @@ lazy_static::lazy_static! {
     pub static ref CREATE_IX_DISC: [u8; 8] = instruction_discriminator("create");
     pub static ref BUY_IX_DISC: [u8; 8] = instruction_discriminator("buy");
     pub static ref SELL_IX_DISC: [u8; 8] = instruction_discriminator("sell");
-    
+
     pub static ref TRADE_EVENT_DISC: [u8; 8] = event_discriminator("TradeEvent");
     pub static ref CREATE_EVENT_DISC: [u8; 8] = event_discriminator("CreateEvent");
 }
@@ -239,10 +239,10 @@ pub fn parse_instruction(data: &[u8]) -> Result<InstructionData, ParseError> {
     if data.len() < 8 {
         return Err(ParseError::InsufficientData);
     }
-    
+
     let disc = &data[0..8];
     let payload = &data[8..];
-    
+
     if disc == CREATE_IX_DISC.as_ref() {
         let args = CreateArgs::try_from_slice(payload)
             .map_err(|e| ParseError::DeserializationFailed(e.to_string()))?;
@@ -264,10 +264,10 @@ pub fn parse_event(data: &[u8]) -> Result<EventData, ParseError> {
     if data.len() < 8 {
         return Err(ParseError::InsufficientData);
     }
-    
+
     let disc = &data[0..8];
     let payload = &data[8..];
-    
+
     if disc == TRADE_EVENT_DISC.as_ref() {
         let event = TradeEvent::try_from_slice(payload)
             .map_err(|e| ParseError::DeserializationFailed(e.to_string()))?;
@@ -313,8 +313,8 @@ pub fn string_to_pubkey(s: &str) -> Option<[u8; 32]> {
 
 ```rust
 use crate::idl::pump_fun::{
-    self, 
-    parse_instruction, 
+    self,
+    parse_instruction,
     parse_event,
     InstructionData,
     EventData,
@@ -329,35 +329,35 @@ use substreams_solana::pb::sf::solana::r#type::v1::Block;
 #[substreams::handlers::map]
 pub fn map_trades(blk: Block) -> Result<Trades, substreams::errors::Error> {
     let mut trades = Trades::default();
-    
+
     for tx in blk.transactions() {
         // Skip failed transactions
         if tx.meta.as_ref().map(|m| m.err.is_some()).unwrap_or(true) {
             continue;
         }
-        
+
         let account_keys = &tx.transaction.as_ref()
             .unwrap()
             .message.as_ref()
             .unwrap()
             .account_keys;
-        
+
         for (ix_idx, ix) in tx.instructions().enumerate() {
             // Check if pump.fun instruction
             let program_id = &account_keys[ix.program_id_index as usize];
             if bs58::encode(program_id).into_string() != PUMP_FUN_PROGRAM_ID {
                 continue;
             }
-            
+
             // Parse instruction
             match parse_instruction(&ix.data) {
                 Ok(InstructionData::Buy(args)) => {
                     let mint = get_account(ix, account_keys, buy_accounts::MINT);
                     let user = get_account(ix, account_keys, buy_accounts::USER);
-                    
-                    log::debug!("Buy: {} tokens for max {} SOL", 
+
+                    log::debug!("Buy: {} tokens for max {} SOL",
                         args.amount, args.max_sol_cost);
-                    
+
                     trades.trades.push(Trade {
                         id: format!("{}:{}",
                             bs58::encode(&tx.signature).into_string(),
@@ -375,9 +375,9 @@ pub fn map_trades(blk: Block) -> Result<Trades, substreams::errors::Error> {
                 Ok(InstructionData::Sell(args)) => {
                     let mint = get_account(ix, account_keys, sell_accounts::MINT);
                     let user = get_account(ix, account_keys, sell_accounts::USER);
-                    
+
                     trades.trades.push(Trade {
-                        id: format!("{}:{}", 
+                        id: format!("{}:{}",
                             bs58::encode(&tx.signature).into_string(),
                             ix_idx
                         ),
@@ -398,7 +398,7 @@ pub fn map_trades(blk: Block) -> Result<Trades, substreams::errors::Error> {
                 }
             }
         }
-        
+
         // Parse events from logs
         if let Some(meta) = &tx.meta {
             for log in &meta.log_messages {
@@ -407,13 +407,13 @@ pub fn map_trades(blk: Block) -> Result<Trades, substreams::errors::Error> {
                     if let Ok(data) = base64::decode(b64) {
                         match parse_event(&data) {
                             Ok(EventData::Trade(event)) => {
-                                log::debug!("TradeEvent: {} {} tokens", 
+                                log::debug!("TradeEvent: {} {} tokens",
                                     if event.is_buy { "buy" } else { "sell" },
                                     event.token_amount
                                 );
                             }
                             Ok(EventData::Create(event)) => {
-                                log::debug!("CreateEvent: {} ({})", 
+                                log::debug!("CreateEvent: {} ({})",
                                     event.name, event.symbol);
                             }
                             Err(_) => {}
@@ -423,13 +423,13 @@ pub fn map_trades(blk: Block) -> Result<Trades, substreams::errors::Error> {
             }
         }
     }
-    
+
     Ok(trades)
 }
 
 fn get_account(
-    ix: &CompiledInstruction, 
-    keys: &[Vec<u8>], 
+    ix: &CompiledInstruction,
+    keys: &[Vec<u8>],
     index: usize
 ) -> String {
     ix.accounts
@@ -455,25 +455,25 @@ lazy_static = "1.4"
 
 ## IDL Type Mapping
 
-| IDL Type | Rust Type |
-|----------|-----------|
-| `u8` | `u8` |
-| `u16` | `u16` |
-| `u32` | `u32` |
-| `u64` | `u64` |
-| `u128` | `u128` |
-| `i8` | `i8` |
-| `i16` | `i16` |
-| `i32` | `i32` |
-| `i64` | `i64` |
-| `i128` | `i128` |
-| `bool` | `bool` |
-| `string` | `String` |
-| `publicKey` | `[u8; 32]` |
-| `bytes` | `Vec<u8>` |
-| `{ option: T }` | `Option<T>` |
-| `{ vec: T }` | `Vec<T>` |
-| `{ array: [T, N] }` | `[T; N]` |
+| IDL Type            | Rust Type   |
+| ------------------- | ----------- |
+| `u8`                | `u8`        |
+| `u16`               | `u16`       |
+| `u32`               | `u32`       |
+| `u64`               | `u64`       |
+| `u128`              | `u128`      |
+| `i8`                | `i8`        |
+| `i16`               | `i16`       |
+| `i32`               | `i32`       |
+| `i64`               | `i64`       |
+| `i128`              | `i128`      |
+| `bool`              | `bool`      |
+| `string`            | `String`    |
+| `publicKey`         | `[u8; 32]`  |
+| `bytes`             | `Vec<u8>`   |
+| `{ option: T }`     | `Option<T>` |
+| `{ vec: T }`        | `Vec<T>`    |
+| `{ array: [T, N] }` | `[T; N]`    |
 
 ## Generating Types from IDL (Script)
 
