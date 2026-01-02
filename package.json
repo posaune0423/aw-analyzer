@@ -3,12 +3,27 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "bin": {
+    "aw-analyzer": "src/main.ts"
+  },
   "scripts": {
     "format": "prettier --check . --experimental-ternaries --experimental-cli",
     "format:fix": "prettier --write . --experimental-ternaries --experimental-cli",
-    "type-check": "tsgo --noEmit",
+    "typecheck": "tsgo --noEmit",
     "lint": "eslint .",
-    "lint:fix": "eslint --fix ."
+    "lint:fix": "eslint --fix .",
+    "start": "bun src/main.ts tick",
+    "test": "bun test tests",
+    "tick": "bun src/main.ts tick",
+    "install-service": "bun src/main.ts install",
+    "uninstall-service": "bun src/main.ts uninstall",
+    "reset": "bun src/main.ts reset",
+    "help": "bun src/main.ts help",
+    "version": "bun src/main.ts version",
+    "metrics": "bun scripts/oneshot.ts metrics",
+    "summary": "bun scripts/oneshot.ts summary",
+    "report": "bun scripts/oneshot.ts report",
+    "alert": "bun scripts/oneshot.ts alert"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
@@ -24,7 +39,7 @@
     "typescript-eslint": "^8.51.0"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "prettier": {
     "printWidth": 120,
@@ -35,5 +50,12 @@
       "@prettier/plugin-oxc",
       "prettier-plugin-tailwindcss"
     ]
+  },
+  "dependencies": {
+    "@slack/webhook": "^7.0.6",
+    "@t3-oss/env-core": "^0.13.10",
+    "neverthrow": "^8.2.0",
+    "openai": "^6.15.0",
+    "zod": "^4.3.4"
   }
 }
