@@ -1,0 +1,275 @@
+---
+alwaysApply: true
+---
+
+# Substreams Development (Solana / pump.fun)
+
+🎯 Goal
+
+Build scalable, deterministic, production-safe Substreams pipelines for Solana (pump.fun 중심), optimized for:
+
+- High-volume real-time data
+- Rule-based alerting
+- Accurate holder_count
+- Future extensibility
+
+Avoid architectural dead ends.
+
+---
+
+1. Core Mental Model (MUST UNDERSTAND)
+
+Substreams is:
+
+- A deterministic block → data transformation engine
+- NOT a database
+- NOT a general analytics engine
+- NOT a rule evaluation engine
+
+Responsibilities split:
+
+- Substreams → extract facts and minimal state
+- DB (Postgres) → aggregate, query, alert, analyze
+- Cron / external jobs → time windows, USD rates, narrative data
+
+---
+
+2. Fundamental Concepts (Non-negotiable)
+
+map module
+
+- Stateless
+- Pure function: input → output
+- Used for:
+- Event extraction (trades, creates)
+- Normalization
+- DatabaseChanges generation
+
+store module
+
+- Stateful internal KV store
+- Exists only inside Substreams engine
+- Used ONLY for:
+- Incremental counters
+- Simple state needed by downstream map
+- NEVER treated as persistent storage
+
+sink
+
+- The ONLY place where data is persisted
+- SQL sink + DatabaseChanges is canonical
+
+---
+
+3. Golden Rules (Hard Rules)
+
+❌ NEVER DO (Bad Practices) 1. Use store as a database
+
+- store is NOT persistent
+- store contents are not queryable externally 2. Scan / enumerate store
+- store supports only get and deltas
+- no full iteration, no prefix scan 3. Perform large window aggregation in map
+- no 24h volume, p95, rolling stats in map
+- these belong in DB / cron 4. Call external APIs inside map/store
+- breaks determinism
+- causes reorg / replay inconsistencies 5. Mix business logic into map
+- no alert rules
+- no user-specific logic
+- no thresholds 6. Treat Transfer instruction as Trade
+- transfer ≠ trade
+- meaning matters 7. Assume tx hash uniquely identifies an event
+- Solana requires:
+- signature + ix_index + inner_ix_index
+
+---
+
+4. Best Practices (Strongly Recommended)
+
+✅ Architecture
+
+- Separate layers:
+
+Block → map (facts)
+→ store (minimal state)
+→ map (normalize → DatabaseChanges)
+→ SQL sink
+→ DB aggregates
+→ Rule engine (outside Substreams)
+
+    •	Use natural keys
+    •	mint_address
+    •	wallet_address
+    •	(signature, ix_index, inner_ix_index)
+
+---
+
+5. Event vs State: Correct Source of Truth
+
+Trade / Price / ATH / MC
+
+✅ Use pump / AMM trade events
+
+Why:
+
+- Semantic meaning (buy/sell)
+- Amounts, reserves, side
+- Cleaner than transfers
+
+holder_count
+
+✅ Use Token Account balance state changes
+
+Why:
+
+- holder_count = balance 0 → >0 transitions
+- transfer instructions are noisy & incomplete
+- account state is authoritative
+
+---
+
+6. holder_count Implementation Rule
+
+v1 strategy (recommended)
+
+- Track Token Account balance changes
+- On each account change:
+- old_amount == 0 && new_amount > 0 → +1
+- old_amount > 0 && new_amount == 0 → -1
+- Store:
+- hc:{mint} in store (add)
+
+⚠️ v1 uses token-account granularity
+
+- Owner aggregation is v2
+- Acceptable accuracy for pump.fun
+
+---
+
+7. store Usage Rules
+
+Allowed
+
+- Incremental counters (add)
+- Simple key→value state (set)
+- Change-driven logic via deltas
+
+Forbidden
+
+- Long-term storage
+- Full balances for all wallets
+- High-cardinality keys without mint filtering
+
+Required optimizations
+
+- Track only known mints
+- Apply TTL / scope limits (e.g., first N days)
+
+---
+
+8. Protobuf Rules
+   - Proto defines normalized data, NOT ABI
+   - Keep messages:
+   - Small
+   - Stable
+   - Purpose-specific
+   - Use string for numeric values if precision matters
+   - Cast to numeric in DB
+
+---
+
+9. Database Strategy (Critical)
+
+Fact tables (append-only)
+
+- trades
+- transfers
+- token_account_changes
+
+Aggregate tables (hot path)
+
+- token_metrics (price, ATH, MC, holder_count)
+- token_flow_24h (buy size stats)
+
+NEVER
+
+- Query fact tables during alert evaluation
+- Join large fact tables together
+
+---
+
+10. Alert / Rule Evaluation (Outside Substreams)
+
+Principles
+
+- Substreams produces facts only
+- Rules are evaluated in DB + application layer
+
+v1 simplification
+
+- Rules = AND-only numeric thresholds
+- Precomputed features only
+- No state machine in Substreams
+
+Performance strategy
+
+- token_dirty queue
+- depends_on field filtering
+- cooldown suppression
+
+---
+
+11. Determinism & Reorg Safety
+    - map/store logic must be:
+    - Deterministic
+    - Order-stable
+    - DB writes must be:
+    - Idempotent
+    - Based on natural keys
+    - Reprocessing must not corrupt state
+
+---
+
+12. When to Use Rust vs TS
+
+Rust
+
+- Substreams WASM (mandatory)
+- Low-level extraction
+
+TypeScript
+
+- Rule engine
+- SQL generation
+- Alerting
+- Orchestration
+
+Do NOT rewrite rule engine in Rust prematurely
+
+---
+
+13. Upgrade Path (v2+)
+
+Allowed later:
+
+- Owner-level holder aggregation
+- Sliding windows (1m/5m)
+- State machine alerts
+- Approximate quantiles (TDigest)
+- Multi-chain ingestion
+
+---
+
+14. One-Line Summary (Memorize This)
+
+Substreams extracts deterministic facts and minimal state.
+Everything else belongs in the database or application layer.
+
+---
+
+If you want, next I can:
+
+- Convert this into Cursor .rules JSON
+- Or make a Substreams code review checklist
+- Or create a pump.fun-specific Substreams template repo structure
+
+Just say which.
