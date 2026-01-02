@@ -1,4 +1,4 @@
-# aw-agent
+# aw-analyzer
 
 To install dependencies:
 

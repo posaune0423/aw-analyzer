@@ -1,5 +1,5 @@
 {
-  "name": "aw-agent",
+  "name": "aw-analyzer",
   "module": "index.ts",
   "type": "module",
   "private": true,
