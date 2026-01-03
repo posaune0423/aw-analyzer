@@ -1,27 +1,39 @@
 /**
  * Report Generation Job
  *
- * Generates markdown reports using AI or fallback,
- * and optionally sends them to Slack.
+ * Generates rich Block Kit reports with AI insights and sends them to Slack.
  */
 
-import { generateAiReport, generateFallbackReport, type AnalyzerConfig, type ReportInput } from "../libs/analyzer.ts";
+import {
+  generateAnalysis,
+  getFallbackAnalysis,
+  type AnalyzerConfig,
+  type ReportInput,
+  type AnalysisResult,
+} from "../libs/analyzer.ts";
 import { getMetrics, type DailyMetrics } from "../libs/activity-watch.ts";
-import { createSlackBlocks, sendSlackMessage, type SlackConfig } from "../libs/slack.ts";
+import { createReportBlocks, sendSlackMessage, type SlackConfig, type ReportData } from "../libs/slack.ts";
+import { env } from "../env.ts";
 import type { Job, JobContext, JobResult } from "../scheduler.ts";
-import { dailyKey, endOfDay, formatDateKey, shouldTriggerDaily, startOfDay } from "../utils/date-utils.ts";
+import {
+  dailyKey,
+  endOfDay,
+  formatDateKey,
+  formatDuration,
+  shouldTriggerDaily,
+  startOfDay,
+} from "../utils/date-utils.ts";
 import { logger } from "../utils/logger.ts";
 
 export type ReportJobConfig = {
   targetHour: number;
   targetMinute?: number;
-  analyzerConfig: AnalyzerConfig;
+  analyzerConfig?: AnalyzerConfig;
   slackConfig: SlackConfig;
-  useAi?: boolean;
 };
 
 export function createReportJob(config: ReportJobConfig): Job {
-  const { targetHour, targetMinute = 0, analyzerConfig, slackConfig, useAi = false } = config;
+  const { targetHour, targetMinute = 0, analyzerConfig, slackConfig } = config;
 
   return {
     id: "daily-report",
@@ -57,23 +69,39 @@ export function createReportJob(config: ReportJobConfig): Job {
         generatedAt: ctx.now,
       };
 
-      // Generate report (AI or fallback)
-      let markdown: string;
-
-      if (useAi) {
-        const aiResult = await generateAiReport(analyzerConfig, reportInput);
+      // Generate AI analysis or use fallback
+      let analysis: AnalysisResult;
+      if (analyzerConfig?.apiKey) {
+        const aiResult = await generateAnalysis(analyzerConfig, reportInput);
         if (aiResult.isOk()) {
-          markdown = aiResult.value;
+          analysis = aiResult.value;
         } else {
-          logger.warn("AI report failed, using fallback", aiResult.error.message);
-          markdown = generateFallbackReport(reportInput);
+          logger.warn("AI analysis failed, using fallback", aiResult.error.message);
+          analysis = getFallbackAnalysis(reportInput);
         }
       } else {
-        markdown = generateFallbackReport(reportInput);
+        analysis = getFallbackAnalysis(reportInput);
       }
 
+      // Build Block Kit report
+      const reportData: ReportData = {
+        date: formatDateKey(yesterday),
+        workTime: formatDuration(metrics.workSeconds),
+        maxContinuous: formatDuration(metrics.maxContinuousSeconds),
+        nightWork: formatDuration(metrics.nightWorkSeconds),
+        topApps: metrics.topApps.slice(0, 5).map(a => ({
+          app: a.app,
+          time: formatDuration(a.seconds),
+        })),
+        summary: analysis.summary,
+        insights: analysis.insights,
+        tip: analysis.tip,
+        awBaseUrl: ctx.awConfig.baseUrl,
+        hostname: env.ACTIVITYWATCH_HOSTNAME,
+      };
+
       // Send to Slack
-      const blocks = createSlackBlocks(markdown);
+      const blocks = createReportBlocks(reportData);
       const slackResult = await sendSlackMessage(slackConfig, { text: "Daily Activity Report", blocks });
 
       if (slackResult.isErr()) {

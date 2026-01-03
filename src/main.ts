@@ -26,8 +26,7 @@ const jobs: Job[] = [
 
   createReportJob({
     targetHour: 22, // 10 PM
-    useAi: true,
-    analyzerConfig: { apiKey: env.OPENAI_API_KEY },
+    analyzerConfig: env.OPENAI_API_KEY ? { apiKey: env.OPENAI_API_KEY } : undefined,
     slackConfig: { webhookUrl: env.SLACK_WEBHOOK_URL },
   }),
 ];

@@ -6,7 +6,13 @@ import { err, ok, type Result } from "neverthrow";
 import OpenAI from "openai";
 
 import type { DailyMetrics } from "./activity-watch.ts";
-import { formatDuration } from "../utils/date-utils.ts";
+import {
+  SYSTEM_PROMPTS,
+  buildAnalysisPrompt,
+  generateFallbackAnalysis,
+  type AnalysisResult,
+  type PromptInput,
+} from "./prompts.ts";
 import { logger } from "../utils/logger.ts";
 
 // ============================================================================
@@ -29,57 +35,38 @@ export type AnalyzerConfig = {
   model?: string;
 };
 
+export type { AnalysisResult };
+
 // ============================================================================
-// AI Report Generation
+// AI Analysis Generation
 // ============================================================================
 
-function buildPrompt(input: ReportInput): string {
-  const { period, metrics } = input;
-  const startStr = period.start.toISOString().split("T")[0];
-  const endStr = period.end.toISOString().split("T")[0];
-
-  const topAppsStr = metrics.topApps.map(a => `- ${a.app}: ${formatDuration(a.seconds)}`).join("\n");
-
-  return `Generate a brief daily activity analysis report in Markdown format.
-
-## Input Data
-
-Period: ${startStr} to ${endStr}
-Total Work Time: ${formatDuration(metrics.workSeconds)}
-Max Continuous Session: ${formatDuration(metrics.maxContinuousSeconds)}
-
-Top Applications:
-${topAppsStr || "- No data"}
-
-## Requirements
-
-1. Start with a "## Summary" section (2-3 sentences)
-2. Include "## Key Metrics" with the main numbers
-3. If notable patterns exist, add "## Notable Changes" section
-4. Keep the report concise (under 200 words)
-5. Use positive, constructive tone
-6. Format dates as YYYY-MM-DD`;
-}
-
-export async function generateAiReport(
+export async function generateAnalysis(
   config: AnalyzerConfig,
   input: ReportInput,
-): Promise<Result<string, AnalyzerError>> {
+): Promise<Result<AnalysisResult, AnalyzerError>> {
   if (!config.apiKey) {
     return err({ type: "config_error", message: "OpenAI API key not configured" });
   }
 
+  const dateStr = input.period.start.toISOString().split("T")[0] ?? "";
+  const promptInput: PromptInput = {
+    date: dateStr,
+    metrics: input.metrics,
+  };
+
   try {
     const client = new OpenAI({ apiKey: config.apiKey });
-    const prompt = buildPrompt(input);
+    const prompt = buildAnalysisPrompt(promptInput);
 
     const response = await client.chat.completions.create({
       model: config.model ?? "gpt-4o-mini",
       messages: [
-        { role: "system", content: "You are a productivity analyst generating activity reports." },
+        { role: "system", content: SYSTEM_PROMPTS.analyst },
         { role: "user", content: prompt },
       ],
-      max_tokens: 500,
+      max_tokens: 800,
+      response_format: { type: "json_object" },
     });
 
     const content = response.choices[0]?.message?.content;
@@ -87,54 +74,32 @@ export async function generateAiReport(
       return err({ type: "parse_error", message: "Empty response from AI" });
     }
 
-    logger.debug("AI report generated");
-    return ok(content);
+    // Parse JSON response
+    const parsed = JSON.parse(content) as AnalysisResult;
+
+    // Validate structure
+    if (!parsed.summary || !Array.isArray(parsed.insights) || !parsed.tip) {
+      return err({ type: "parse_error", message: "Invalid response structure" });
+    }
+
+    logger.debug("AI analysis generated");
+    return ok(parsed);
   } catch (error) {
+    if (error instanceof SyntaxError) {
+      logger.error("Failed to parse AI response as JSON");
+      return err({ type: "parse_error", message: "Invalid JSON response" });
+    }
     const message = error instanceof Error ? error.message : "AI API error";
-    logger.error("AI report generation failed", message);
+    logger.error("AI analysis generation failed", message);
     return err({ type: "api_error", message });
   }
 }
 
 // ============================================================================
-// Fallback Report Generation (deterministic)
+// Fallback Analysis (when AI is unavailable)
 // ============================================================================
 
-export function generateFallbackReport(input: ReportInput): string {
-  const { period, metrics, generatedAt } = input;
-  const startStr = period.start.toISOString().split("T")[0];
-  const endStr = period.end.toISOString().split("T")[0];
-  const generatedStr = generatedAt.toISOString();
-
-  const topAppsStr =
-    metrics.topApps
-      .slice(0, 5)
-      .map(a => `| ${a.app} | ${formatDuration(a.seconds)} |`)
-      .join("\n") || "| No data | - |";
-
-  return `# Activity Report
-
-**Period**: ${startStr} to ${endStr}
-**Generated**: ${generatedStr}
-
-## Summary
-
-This is an automated activity report based on ActivityWatch data.
-
-## Key Metrics
-
-| Metric | Value |
-|--------|-------|
-| Total Work Time | ${formatDuration(metrics.workSeconds)} |
-| Max Continuous Session | ${formatDuration(metrics.maxContinuousSeconds)} |
-| Night Work Time | ${formatDuration(metrics.nightWorkSeconds)} |
-
-## Top Applications
-
-| Application | Time |
-|-------------|------|
-${topAppsStr}
-
----
-*Generated by aw-analyzer*`;
+export function getFallbackAnalysis(input: ReportInput): AnalysisResult {
+  const dateStr = input.period.start.toISOString().split("T")[0] ?? "";
+  return generateFallbackAnalysis({ date: dateStr, metrics: input.metrics });
 }

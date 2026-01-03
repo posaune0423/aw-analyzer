@@ -6,6 +6,7 @@
  */
 
 import { createEnv } from "@t3-oss/env-core";
+import { hostname as getHostname } from "os";
 import { z } from "zod/v4";
 
 export const env = createEnv({
@@ -19,6 +20,9 @@ export const env = createEnv({
     // ActivityWatch server URL (default: http://localhost:5600)
     ACTIVITYWATCH_URL: z.url().optional().default("http://localhost:5600"),
 
+    // Hostname for ActivityWatch (default: system hostname)
+    ACTIVITYWATCH_HOSTNAME: z.string().optional().default(getHostname()),
+
     // Log level
     LOG_LEVEL: z.enum(["DEBUG", "INFO", "WARN", "ERROR"]).optional().default("INFO"),
   },
@@ -30,6 +34,7 @@ export const env = createEnv({
     OPENAI_API_KEY: Bun.env.OPENAI_API_KEY,
     SLACK_WEBHOOK_URL: Bun.env.SLACK_WEBHOOK_URL,
     ACTIVITYWATCH_URL: Bun.env.ACTIVITYWATCH_URL,
+    ACTIVITYWATCH_HOSTNAME: Bun.env.ACTIVITYWATCH_HOSTNAME,
     LOG_LEVEL: Bun.env.LOG_LEVEL,
   },
 

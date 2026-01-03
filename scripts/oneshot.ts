@@ -12,7 +12,7 @@
  *   bun run alert     - Check continuous work alert
  *
  * Options (pass after --):
- *   --date YYYY-MM-DD  Target date (default: yesterday for report/summary, today for alert/metrics)
+ *   --date YYYY-MM-DD  Target date (default: yesterday for summary, today for others)
  *   --verbose          Show detailed output
  *   --aw-url URL       ActivityWatch base URL (default: http://localhost:5600)
  */
@@ -21,8 +21,8 @@ import { type Result } from "neverthrow";
 
 import { env } from "../src/env.ts";
 import { getMetrics, type DailyMetrics, type AwConfig } from "../src/libs/activity-watch.ts";
-import { generateAiReport, generateFallbackReport, type ReportInput } from "../src/libs/analyzer.ts";
-import { createSlackBlocks, sendSlackMessage, type SlackConfig } from "../src/libs/slack.ts";
+import { generateAnalysis, getFallbackAnalysis, type ReportInput, type AnalysisResult } from "../src/libs/analyzer.ts";
+import { createReportBlocks, sendSlackMessage, type SlackConfig, type ReportData } from "../src/libs/slack.ts";
 import { startOfDay, endOfDay, formatDuration, formatDateKey } from "../src/utils/date-utils.ts";
 import { configureLogger, logger } from "../src/utils/logger.ts";
 
@@ -148,9 +148,7 @@ async function runSummary(opts: Options): Promise<void> {
 }
 
 async function runReport(opts: Options): Promise<void> {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const date = opts.date ?? yesterday;
+  const date = opts.date ?? new Date();
   const awConfig: AwConfig = { baseUrl: opts.awUrl };
 
   logger.info("Generating daily report...");
@@ -172,24 +170,64 @@ async function runReport(opts: Options): Promise<void> {
     generatedAt: new Date(),
   };
 
-  // Generate AI report
-  logger.info("Generating AI report...");
-  const aiResult = await generateAiReport({ apiKey: env.OPENAI_API_KEY }, reportInput);
+  // Generate AI analysis
+  let analysis: AnalysisResult;
 
-  let markdown: string;
-  if (aiResult.isOk()) {
-    markdown = aiResult.value;
+  if (env.OPENAI_API_KEY) {
+    logger.info("Generating AI analysis...");
+    const aiResult = await generateAnalysis({ apiKey: env.OPENAI_API_KEY }, reportInput);
+    if (aiResult.isOk()) {
+      analysis = aiResult.value;
+      logger.info("AI analysis generated successfully");
+    } else {
+      logger.warn("AI analysis failed, using fallback:", aiResult.error.message);
+      analysis = getFallbackAnalysis(reportInput);
+    }
   } else {
-    logger.warn("AI report failed, using fallback:", aiResult.error.message);
-    markdown = generateFallbackReport(reportInput);
+    logger.info("No OpenAI API key, using fallback analysis");
+    analysis = getFallbackAnalysis(reportInput);
   }
 
-  console.log("\n" + markdown);
+  // Build report data for Block Kit
+  const reportData: ReportData = {
+    date: formatDateKey(date),
+    workTime: formatDuration(metrics.workSeconds),
+    maxContinuous: formatDuration(metrics.maxContinuousSeconds),
+    nightWork: formatDuration(metrics.nightWorkSeconds),
+    topApps: metrics.topApps.slice(0, 5).map(a => ({
+      app: a.app,
+      time: formatDuration(a.seconds),
+    })),
+    summary: analysis.summary,
+    insights: analysis.insights,
+    tip: analysis.tip,
+    awBaseUrl: env.ACTIVITYWATCH_URL,
+    hostname: env.ACTIVITYWATCH_HOSTNAME,
+  };
 
-  // Send to Slack
+  // Print summary to console
+  console.log("\n📊 Daily Report Preview");
+  console.log("─".repeat(40));
+  console.log(`📅 Date: ${reportData.date}`);
+  console.log(`⏱️  Work Time: ${reportData.workTime}`);
+  console.log(`🔥 Max Continuous: ${reportData.maxContinuous}`);
+  console.log(`🌙 Night Work: ${reportData.nightWork}`);
+  console.log("\n💻 Top Applications:");
+  for (const app of reportData.topApps) {
+    console.log(`   • ${app.app}: ${app.time}`);
+  }
+  console.log(`\n✨ Summary: ${analysis.summary}`);
+  console.log("\n🧠 AI Insights:");
+  for (const insight of analysis.insights) {
+    console.log(`   • ${insight}`);
+  }
+  console.log(`\n💡 Tip: ${analysis.tip}`);
+  console.log();
+
+  // Send to Slack with Block Kit
   logger.info("Sending to Slack...");
   const slackConfig: SlackConfig = { webhookUrl: env.SLACK_WEBHOOK_URL };
-  const blocks = createSlackBlocks(markdown);
+  const blocks = createReportBlocks(reportData);
   const slackResult = await sendSlackMessage(slackConfig, { text: "Daily Activity Report", blocks });
 
   if (slackResult.isErr()) {
@@ -245,7 +283,7 @@ Commands:
   alert       Check continuous work alert
 
 Options (pass after --):
-  --date YYYY-MM-DD  Target date (default: yesterday for report/summary, today for alert/metrics)
+  --date YYYY-MM-DD  Target date (default: yesterday for summary, today for others)
   --verbose          Show detailed output
   --aw-url URL       ActivityWatch base URL (default: http://localhost:5600)
 

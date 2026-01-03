@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { generateFallbackReport, type ReportInput } from "../src/libs/analyzer.ts";
+import { getFallbackAnalysis, type ReportInput } from "../src/libs/analyzer.ts";
 
 const testInput: ReportInput = {
   period: {
@@ -25,35 +25,37 @@ const testInput: ReportInput = {
   generatedAt: new Date("2026-01-02T09:00:00Z"),
 };
 
-describe("generateFallbackReport", () => {
-  test("generates markdown report with correct structure", () => {
-    const report = generateFallbackReport(testInput);
+describe("getFallbackAnalysis", () => {
+  test("returns analysis with summary, insights, and tip", () => {
+    const analysis = getFallbackAnalysis(testInput);
 
-    expect(report).toContain("# Activity Report");
-    expect(report).toContain("## Summary");
-    expect(report).toContain("## Key Metrics");
-    expect(report).toContain("## Top Applications");
+    expect(analysis.summary).toBeDefined();
+    expect(analysis.summary.length).toBeGreaterThan(0);
+    expect(analysis.insights).toBeInstanceOf(Array);
+    expect(analysis.insights.length).toBeGreaterThan(0);
+    expect(analysis.tip).toBeDefined();
+    expect(analysis.tip.length).toBeGreaterThan(0);
   });
 
-  test("includes period dates", () => {
-    const report = generateFallbackReport(testInput);
+  test("summary mentions work time", () => {
+    const analysis = getFallbackAnalysis(testInput);
 
-    expect(report).toContain("2026-01-01");
+    expect(analysis.summary).toContain("8h");
   });
 
-  test("includes formatted metrics", () => {
-    const report = generateFallbackReport(testInput);
+  test("generates insights about focus sessions", () => {
+    const analysis = getFallbackAnalysis(testInput);
 
-    expect(report).toContain("8h"); // workSeconds
-    expect(report).toContain("1h 30m"); // maxContinuousSeconds
+    // Should have insight about 1h 30m focus session
+    const hasSessionInsight = analysis.insights.some(i => i.includes("1h 30m") || i.includes("focus"));
+    expect(hasSessionInsight).toBe(true);
   });
 
-  test("includes top applications", () => {
-    const report = generateFallbackReport(testInput);
+  test("generates insights about top apps", () => {
+    const analysis = getFallbackAnalysis(testInput);
 
-    expect(report).toContain("VS Code");
-    expect(report).toContain("Chrome");
-    expect(report).toContain("Slack");
+    const hasAppInsight = analysis.insights.some(i => i.includes("VS Code"));
+    expect(hasAppInsight).toBe(true);
   });
 
   test("handles empty metrics gracefully", () => {
@@ -69,10 +71,24 @@ describe("generateFallbackReport", () => {
       generatedAt: new Date(),
     };
 
-    const report = generateFallbackReport(emptyInput);
+    const analysis = getFallbackAnalysis(emptyInput);
 
-    expect(report).toContain("# Activity Report");
-    expect(report).toContain("0s");
-    expect(report).toContain("No data");
+    expect(analysis.summary).toBeDefined();
+    expect(analysis.tip).toBeDefined();
+  });
+
+  test("provides appropriate tip for long work hours", () => {
+    const longDayInput: ReportInput = {
+      ...testInput,
+      metrics: {
+        ...testInput.metrics,
+        workSeconds: 36000, // 10 hours
+      },
+    };
+
+    const analysis = getFallbackAnalysis(longDayInput);
+
+    // Should suggest rest
+    expect(analysis.tip.toLowerCase()).toMatch(/rest|recover|recharge/);
   });
 });
