@@ -73,6 +73,14 @@ describe("parseArgs", () => {
         expect(result.value.command).toBe("uninstall");
       }
     });
+
+    test("parses weekly-report command", () => {
+      const result = parseArgs(["bun", "cli.ts", "weekly-report"]);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.command).toBe("weekly-report");
+      }
+    });
   });
 
   describe("flag parsing", () => {
@@ -155,6 +163,22 @@ describe("parseArgs", () => {
       expect(result.isOk()).toBe(true);
       if (result.isOk()) {
         expect(result.value.interval).toBeUndefined();
+      }
+    });
+
+    test("parses --days option with valid number", () => {
+      const result = parseArgs(["bun", "cli.ts", "weekly-report", "--days", "14"]);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.days).toBe(14);
+      }
+    });
+
+    test("ignores --days option with invalid number", () => {
+      const result = parseArgs(["bun", "cli.ts", "weekly-report", "--days", "abc"]);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.days).toBeUndefined();
       }
     });
   });

@@ -17,6 +17,12 @@ export const env = createEnv({
     // Slack webhook URL for sending notifications
     SLACK_WEBHOOK_URL: z.url(),
 
+    // Slack Bot token (optional) for file uploads (e.g. SVG graph)
+    SLACK_BOT_TOKEN: z.string().optional(),
+
+    // Slack channel id (optional) used for file uploads
+    SLACK_CHANNEL_ID: z.string().optional(),
+
     // ActivityWatch server URL (default: http://localhost:5600)
     ACTIVITYWATCH_URL: z.url().optional().default("http://localhost:5600"),
 
@@ -33,6 +39,8 @@ export const env = createEnv({
   runtimeEnv: {
     OPENAI_API_KEY: Bun.env.OPENAI_API_KEY,
     SLACK_WEBHOOK_URL: Bun.env.SLACK_WEBHOOK_URL,
+    SLACK_BOT_TOKEN: Bun.env.SLACK_BOT_TOKEN,
+    SLACK_CHANNEL_ID: Bun.env.SLACK_CHANNEL_ID,
     ACTIVITYWATCH_URL: Bun.env.ACTIVITYWATCH_URL,
     ACTIVITYWATCH_HOSTNAME: Bun.env.ACTIVITYWATCH_HOSTNAME,
     LOG_LEVEL: Bun.env.LOG_LEVEL,

@@ -27,6 +27,14 @@ export type SectionBlock = {
   fields?: Array<{ type: "mrkdwn"; text: string }>;
 };
 
+export type ImageBlock = {
+  type: "image";
+  image_url?: string;
+  slack_file?: { url?: string; id?: string };
+  alt_text: string;
+  title?: { type: "plain_text"; text: string; emoji?: boolean };
+};
+
 export type DividerBlock = {
   type: "divider";
 };
@@ -36,13 +44,98 @@ export type ContextBlock = {
   elements: Array<{ type: "mrkdwn"; text: string }>;
 };
 
-export type SlackBlock = HeaderBlock | SectionBlock | DividerBlock | ContextBlock;
+export type SlackBlock = HeaderBlock | SectionBlock | ImageBlock | DividerBlock | ContextBlock;
+
+/**
+ * Validate blocks before sending to Slack
+ */
+function validateBlocks(blocks: SlackBlock[]): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  // Maximum 50 blocks per message
+  if (blocks.length > 50) {
+    errors.push(`Too many blocks: ${blocks.length} (max 50)`);
+  }
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (!block) continue;
+
+    // Validate section blocks with fields
+    if (block.type === "section" && block.fields) {
+      if (block.fields.length === 0 || block.fields.length > 10) {
+        errors.push(`Block ${i}: Invalid field count ${block.fields.length} (must be 1-10)`);
+      }
+      for (let j = 0; j < block.fields.length; j++) {
+        const field = block.fields[j];
+        if (field && field.text && field.text.length > 2000) {
+          errors.push(`Block ${i}, Field ${j}: Text exceeds 2000 characters (${field.text.length} chars)`);
+        }
+      }
+      // Fields should be even number for 2-column layout (best practice)
+      if (block.fields.length > 0 && block.fields.length % 2 !== 0) {
+        errors.push(`Block ${i}: Field count ${block.fields.length} is odd (should be even for 2-column layout)`);
+      }
+    }
+
+    // Validate section blocks with text
+    if (block.type === "section" && block.text) {
+      if (block.text.text && block.text.text.length > 3000) {
+        errors.push(`Block ${i}: Section text exceeds 3000 characters (${block.text.text.length} chars)`);
+      }
+    }
+
+    // Validate header blocks
+    if (block.type === "header" && block.text) {
+      if (block.text.text && block.text.text.length > 150) {
+        errors.push(`Block ${i}: Header text exceeds 150 characters (${block.text.text.length} chars)`);
+      }
+    }
+
+    // Validate image blocks
+    if (block.type === "image") {
+      // Image block must have either image_url or slack_file
+      if (!block.image_url && !block.slack_file) {
+        errors.push(`Block ${i}: Image block must have either image_url or slack_file`);
+      }
+      if (block.image_url && block.image_url.length > 3000) {
+        errors.push(`Block ${i}: Image image_url exceeds 3000 characters (${block.image_url.length} chars)`);
+      }
+      if (block.alt_text && block.alt_text.length > 2000) {
+        errors.push(`Block ${i}: Image alt_text exceeds 2000 characters (${block.alt_text.length} chars)`);
+      }
+      if (block.title && block.title.text && block.title.text.length > 2000) {
+        errors.push(`Block ${i}: Image title exceeds 2000 characters (${block.title.text.length} chars)`);
+      }
+      // Validate image_url is a valid URL format (if provided)
+      if (block.image_url && !block.image_url.match(/^https?:\/\//)) {
+        errors.push(`Block ${i}: Image image_url must be a valid HTTP/HTTPS URL`);
+      }
+      // Validate slack_file has either url or id
+      if (block.slack_file && !block.slack_file.url && !block.slack_file.id) {
+        errors.push(`Block ${i}: Image slack_file must have either url or id`);
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
 
 export async function sendSlackMessage(
   config: SlackConfig,
   message: { text: string; blocks?: SlackBlock[] },
 ): Promise<Result<void, SlackError>> {
   try {
+    // Validate blocks before sending
+    if (message.blocks) {
+      const validation = validateBlocks(message.blocks);
+      if (!validation.valid) {
+        const errorMsg = `Block validation failed: ${validation.errors.join("; ")}`;
+        logger.error("Slack block validation failed", errorMsg);
+        return err({ type: "slack_error", message: errorMsg });
+      }
+    }
+
     const webhook = new IncomingWebhook(config.webhookUrl, {
       username: config.username,
       icon_emoji: config.iconEmoji,
@@ -52,9 +145,104 @@ export async function sendSlackMessage(
     logger.debug("Slack message sent");
     return ok(undefined);
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Slack error";
-    logger.error("Slack send failed", msg);
-    return err({ type: "slack_error", message: msg });
+    // Extract detailed error information from @slack/webhook error
+    let errorMessage = "Slack error";
+    let errorDetails: string | undefined;
+
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      // @slack/webhook errors may have code, data, and original properties
+      const slackError = error as Error & {
+        code?: string;
+        data?: unknown;
+        statusCode?: number;
+        original?: { message?: string; response?: { data?: unknown } };
+      };
+
+      const parts: string[] = [];
+
+      if (slackError.code) {
+        parts.push(`Code: ${slackError.code}`);
+      }
+      if (slackError.statusCode) {
+        parts.push(`Status: ${slackError.statusCode}`);
+      }
+
+      // Try to extract error details from data property
+      if (slackError.data) {
+        try {
+          const dataStr =
+            typeof slackError.data === "string" ? slackError.data : JSON.stringify(slackError.data, null, 2);
+          parts.push(`Data: ${dataStr}`);
+        } catch {
+          parts.push(`Data: [unable to stringify]`);
+        }
+      }
+
+      // Try to extract error details from original.response.data (common in HTTP errors)
+      if (slackError.original?.response?.data) {
+        try {
+          const responseDataStr =
+            typeof slackError.original.response.data === "string" ?
+              slackError.original.response.data
+            : JSON.stringify(slackError.original.response.data, null, 2);
+          parts.push(`Response: ${responseDataStr}`);
+        } catch {
+          parts.push(`Response: [unable to stringify]`);
+        }
+      }
+
+      if (parts.length > 0) {
+        errorDetails = parts.join(", ");
+      }
+    }
+
+    const fullMessage = errorDetails ? `${errorMessage} (${errorDetails})` : errorMessage;
+    logger.error("Slack send failed", fullMessage);
+
+    // Log the message payload for debugging (without sensitive data)
+    // Also log block structure to help identify validation issues
+    if (message.blocks) {
+      const blockSummary = message.blocks.map((b, i) => {
+        const summary: {
+          index: number;
+          type: string;
+          fields?: number;
+          textLength?: number;
+          imageUrl?: string;
+          altText?: string;
+        } = {
+          index: i,
+          type: b.type,
+        };
+        if (b.type === "section" && b.fields) {
+          summary.fields = b.fields.length;
+          summary.textLength = b.fields.reduce((sum, f) => sum + (f.text?.length ?? 0), 0);
+        }
+        if (b.type === "section" && b.text) {
+          summary.textLength = b.text.text?.length ?? 0;
+        }
+        if (b.type === "image") {
+          summary.imageUrl = b.image_url?.substring(0, 100) + (b.image_url && b.image_url.length > 100 ? "..." : "");
+          summary.altText = b.alt_text?.substring(0, 50) + (b.alt_text && b.alt_text.length > 50 ? "..." : "");
+        }
+        return summary;
+      });
+      logger.debug("Failed message payload", {
+        text: message.text,
+        blocksCount: message.blocks.length,
+        blockSummary,
+      });
+      // Log full block structure for image blocks to debug
+      const imageBlocks = message.blocks.filter(b => b.type === "image");
+      if (imageBlocks.length > 0) {
+        logger.debug("Image blocks detail", JSON.stringify(imageBlocks, null, 2));
+      }
+    } else {
+      logger.debug("Failed message payload", { text: message.text, blocksCount: 0 });
+    }
+
+    return err({ type: "slack_error", message: fullMessage });
   }
 }
 
@@ -77,6 +265,19 @@ export function sectionBlock(text: string): SectionBlock {
 }
 
 export function fieldsBlock(fields: string[]): SectionBlock {
+  // Validate fields according to Slack Block Kit constraints
+  // Fields must be between 1 and 10 items
+  if (fields.length === 0 || fields.length > 10) {
+    logger.warn(`fieldsBlock: Invalid field count ${fields.length}, must be between 1 and 10`);
+  }
+  // Each field text must be max 2000 characters
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (field && field.length > 2000) {
+      logger.warn(`fieldsBlock: Field ${i} exceeds 2000 character limit (${field.length} chars)`);
+    }
+  }
+
   return {
     type: "section",
     fields: fields.map(text => ({ type: "mrkdwn" as const, text })),
@@ -85,6 +286,73 @@ export function fieldsBlock(fields: string[]): SectionBlock {
 
 export function dividerBlock(): DividerBlock {
   return { type: "divider" };
+}
+
+export function imageBlock(input: {
+  imageUrl?: string;
+  slackFileUrl?: string;
+  slackFileId?: string;
+  altText: string;
+  title?: string;
+}): SlackBlock {
+  // Validate input according to Slack Block Kit constraints
+  if (input.imageUrl && input.imageUrl.length > 3000) {
+    logger.warn(`imageBlock: image_url exceeds 3000 character limit (${input.imageUrl.length} chars)`);
+    return sectionBlock(`⚠️ Image omitted: URL too long (${input.imageUrl.length} chars)`);
+  }
+  if (input.altText.length > 2000) {
+    logger.warn(`imageBlock: alt_text exceeds 2000 character limit (${input.altText.length} chars)`);
+    // Truncate alt text instead of failing
+    input.altText = input.altText.substring(0, 1997) + "...";
+  }
+  if (input.title && input.title.length > 2000) {
+    logger.warn(`imageBlock: title exceeds 2000 character limit (${input.title.length} chars)`);
+    // Truncate title
+    input.title = input.title.substring(0, 1997) + "...";
+  }
+
+  // Determine if we should use image_url or slack_file
+  // If imageUrl is a slack-files.com URL, use slack_file instead
+  const isSlackFileUrl = input.imageUrl?.includes("slack-files.com") || input.imageUrl?.includes("files.slack.com");
+
+  const block: ImageBlock = {
+    type: "image",
+    alt_text: input.altText,
+    // title is optional and emoji field is also optional per Slack docs
+    title: input.title ? { type: "plain_text", text: input.title, emoji: true } : undefined,
+  };
+
+  let validSource = false;
+
+  if (isSlackFileUrl && input.imageUrl) {
+    // Use slack_file with url for Slack file URLs
+    block.slack_file = { url: input.imageUrl };
+    validSource = true;
+  } else if (input.slackFileUrl) {
+    // Use slack_file with url
+    block.slack_file = { url: input.slackFileUrl };
+    validSource = true;
+  } else if (input.slackFileId) {
+    // Use slack_file with id
+    block.slack_file = { id: input.slackFileId };
+    validSource = true;
+  } else if (input.imageUrl) {
+    // Use image_url for public URLs
+    // Ensure URL is valid http/https
+    if (input.imageUrl.match(/^https?:\/\//)) {
+      block.image_url = input.imageUrl;
+      validSource = true;
+    } else {
+      logger.warn(`imageBlock: Invalid URL protocol in imageUrl: ${input.imageUrl}`);
+    }
+  }
+
+  if (!validSource) {
+    logger.warn("imageBlock: No valid image source provided");
+    return sectionBlock("⚠️ Image omitted: No valid source provided");
+  }
+
+  return block;
 }
 
 export function contextBlock(texts: string[]): ContextBlock {
