@@ -59,9 +59,7 @@ describe("weekly lifestyle", () => {
     const fetchAfkMetrics = mock(async () => ok({ afkSeconds: 100, notAfkSeconds: 200 }));
     const fetchAfkEvents = mock(async () => ok([]));
     const fetchEditorProjects = mock(async () => ok({ projects: [] }));
-    const sendSlack = mock(async () => ok(undefined));
     const uploadFile = mock(async () => ok({ permalink: "https://example.com/file", fileId: "F123" }));
-    const shareFilePublicly = mock(async () => ok({ permalinkPublic: "https://example.com/public" }));
 
     const awConfig: AwConfig = { baseUrl: "http://localhost:5600" };
 
@@ -69,21 +67,22 @@ describe("weekly lifestyle", () => {
       now: new Date(2026, 0, 8, 12, 0, 0),
       days: 7,
       awConfig,
-      slackConfig: { webhookUrl: "https://example.com/webhook" },
+      slackConfig: { webhookUrl: "" },
       uploadConfig: { botToken: "xoxb-test", channelId: "C123" },
       fetchAfkMetrics,
       fetchAfkEvents,
       fetchEditorProjects,
-      sendSlack,
       uploadFile,
-      shareFilePublicly,
       createHeatmapSvg: () => `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>`,
     });
 
     expect(result.isOk()).toBe(true);
     expect(fetchAfkMetrics.mock.calls.length).toBe(7);
-    expect(sendSlack.mock.calls.length).toBe(1);
     expect(uploadFile.mock.calls.length).toBe(1);
+    // Ensure upload includes initialComment so the file message contains the report text
+    const uploadCalls = uploadFile.mock.calls as unknown as Array<[unknown, { initialComment?: string }]>;
+    const input = uploadCalls[0]?.[1];
+    expect(input?.initialComment).toBeTruthy();
   });
 
   test("runWeeklyLifestyleCommand uploads graph and fetches projects", async () => {
@@ -97,9 +96,7 @@ describe("weekly lifestyle", () => {
         ],
       }),
     );
-    const sendSlack = mock(async () => ok(undefined));
     const uploadFile = mock(async () => ok({ permalink: "https://example.com/file", fileId: "F123" }));
-    const shareFilePublicly = mock(async () => ok({ permalinkPublic: "https://example.com/public" }));
 
     const awConfig: AwConfig = { baseUrl: "http://localhost:5600" };
 
@@ -107,19 +104,21 @@ describe("weekly lifestyle", () => {
       now: new Date(2026, 0, 8, 12, 0, 0),
       days: 7,
       awConfig,
-      slackConfig: { webhookUrl: "https://example.com/webhook" },
+      slackConfig: { webhookUrl: "" },
       uploadConfig: { botToken: "xoxb-test", channelId: "C123" },
       fetchAfkMetrics,
       fetchAfkEvents,
       fetchEditorProjects,
-      sendSlack,
       uploadFile,
-      shareFilePublicly,
       createHeatmapSvg: () => `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>`,
     });
 
     expect(result.isOk()).toBe(true);
     expect(uploadFile.mock.calls.length).toBe(1);
     expect(fetchEditorProjects.mock.calls.length).toBe(1);
+
+    const uploadCalls = uploadFile.mock.calls as unknown as Array<[unknown, { initialComment?: string }]>;
+    const input = uploadCalls[0]?.[1];
+    expect(input?.initialComment).toBeTruthy();
   });
 });

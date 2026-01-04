@@ -24,19 +24,14 @@ import {
   type AwError,
   type EditorProjectMetrics,
 } from "./activity-watch.ts";
-import {
-  shareSlackFilePublicly,
-  uploadSlackFile,
-  type SlackFileUploadConfig,
-  type SlackFileUploadError,
-} from "./slack-file-upload.ts";
+import { uploadSlackFile, type SlackFileUploadConfig, type SlackFileUploadError } from "./slack-file-upload.ts";
 import { analyzeSleepWake, formatAvgTime } from "./sleep-wake-analyzer.ts";
 import { svgToPng } from "./svg-to-png.ts";
 import { generateWeeklyAnalysis, getWeeklyFallbackAnalysis, type WeeklyAnalyzerConfig } from "./weekly-analyzer.ts";
 import { createWeeklyActivityJstHeatmapSvg } from "./weekly-activity-jst-heatmap-svg.ts";
 import { binAfkEventsToJstHourly, buildJstDateKeys } from "./weekly-activity-jst.ts";
-import { sendSlackMessage, type SlackBlock, type SlackConfig, type SlackError } from "./slack.ts";
-import { createWeeklyReportBlocks } from "./weekly-report-blocks.ts";
+import type { SlackConfig, SlackError } from "./slack.ts";
+import { createWeeklyReportMrkdwn } from "./weekly-report-blocks.ts";
 import { buildWeeklyLifestyleSummary, type DailyAfkRecord } from "./weekly-lifestyle.ts";
 import { endOfDay, formatDateKey, startOfDay, buildDateList } from "../utils/date-utils.ts";
 
@@ -59,10 +54,6 @@ export type WeeklyLifestyleCommandDeps = {
     config: AwConfig,
     input: { start: Date; end: Date },
   ) => Promise<Result<EditorProjectMetrics, AwError>>;
-  sendSlack?: (
-    config: SlackConfig,
-    message: { text: string; blocks?: SlackBlock[] },
-  ) => Promise<Result<void, SlackError>>;
   uploadFile?: (
     config: SlackFileUploadConfig,
     input: {
@@ -73,10 +64,6 @@ export type WeeklyLifestyleCommandDeps = {
       content: string | Uint8Array;
     },
   ) => Promise<Result<{ permalink?: string; fileId?: string; permalinkPublic?: string }, SlackFileUploadError>>;
-  shareFilePublicly?: (
-    config: SlackFileUploadConfig,
-    input: { fileId: string },
-  ) => Promise<Result<{ permalinkPublic?: string }, SlackFileUploadError>>;
   generateWeeklyAi?: typeof generateWeeklyAnalysis;
   createHeatmapSvg?: (
     days: ReturnType<typeof binAfkEventsToJstHourly>,
@@ -87,10 +74,6 @@ export type WeeklyLifestyleCommandDeps = {
 export async function runWeeklyLifestyleCommand(
   deps: WeeklyLifestyleCommandDeps,
 ): Promise<Result<void, WeeklyLifestyleCommandError>> {
-  if (!deps.slackConfig.webhookUrl) {
-    return err({ type: "config_error", message: "Slack webhook URL is not configured" });
-  }
-
   if (!deps.uploadConfig.botToken) {
     return err({
       type: "config_error",
@@ -98,12 +81,17 @@ export async function runWeeklyLifestyleCommand(
     });
   }
 
+  if (!deps.uploadConfig.channelId) {
+    return err({
+      type: "config_error",
+      message: "Slack channel id is required (set SLACK_CHANNEL_ID)",
+    });
+  }
+
   const fetcher = deps.fetchAfkMetrics ?? (async (config, input) => getAfkMetrics(config, input));
   const eventsFetcher = deps.fetchAfkEvents ?? (async (config, input) => getAfkEvents(config, input));
   const projectsFetcher = deps.fetchEditorProjects ?? (async (config, input) => getEditorProjectMetrics(config, input));
-  const slackSender = deps.sendSlack ?? (async (config, message) => sendSlackMessage(config, message));
   const uploader = deps.uploadFile ?? (async (config, input) => uploadSlackFile(config, input));
-  const sharer = deps.shareFilePublicly ?? (async (config, input) => shareSlackFilePublicly(config, input));
   const weeklyAi = deps.generateWeeklyAi ?? (async (config, input) => generateWeeklyAnalysis(config, input));
   const heatmapSvg = deps.createHeatmapSvg ?? ((days, opts) => createWeeklyActivityJstHeatmapSvg(days, opts));
 
@@ -154,50 +142,6 @@ export async function runWeeklyLifestyleCommand(
   const projectsResult = await projectsFetcher(deps.awConfig, { start: periodStart, end: periodEnd });
   const projectRanking = projectsResult.isOk() ? projectsResult.value.projects : [];
 
-  // Generate heatmap SVG -> PNG
-  const svg = heatmapSvg(hourly, {
-    title: `Lifestyle Timeband (JST) — ${summary.startDate} → ${summary.endDate}`,
-    subtitle: "Green=active, Gray=inactive • Rows=hour(JST) • Cols=day",
-  });
-
-  const png = svgToPng(svg, { width: 1400, background: "#0b1220" });
-
-  // Upload heatmap to Slack (without channel_id to avoid auto-posting)
-  // File will be referenced in the report message instead
-  const uploadConfigWithoutChannel = {
-    ...deps.uploadConfig,
-    channelId: undefined, // Don't auto-post to channel
-  };
-  const uploadResult = await uploader(uploadConfigWithoutChannel, {
-    filename: `weekly-activity-${summary.startDate}-${summary.endDate}.png`,
-    title: `Weekly Activity Graph (${summary.startDate} → ${summary.endDate}).png`,
-    mimeType: "image/png",
-    content: png,
-  });
-
-  if (uploadResult.isErr()) {
-    return err({ type: "slack_upload_error", message: "Failed to upload graph to Slack", cause: uploadResult.error });
-  }
-
-  const fileId = uploadResult.value.fileId ?? "";
-  const filePermalink = uploadResult.value.permalink;
-  const uploadPermalinkPublic = uploadResult.value.permalinkPublic;
-
-  // Make the file public for image block display
-  // First check if permalink_public was returned from upload
-  let imageUrl: string | undefined = uploadPermalinkPublic;
-
-  // If not available from upload, try to get it via files.sharedPublicURL
-  if (!imageUrl && fileId) {
-    const shareResult = await sharer(deps.uploadConfig, { fileId });
-    if (shareResult.isOk() && shareResult.value.permalinkPublic) {
-      imageUrl = shareResult.value.permalinkPublic;
-    } else {
-      // Log warning but continue - Slack will show file preview automatically
-      logger.warn("Could not obtain public URL for image block, file preview will be shown instead");
-    }
-  }
-
   // AI analysis (with project and sleep/wake data)
   const aiInput = {
     summary,
@@ -214,29 +158,48 @@ export async function runWeeklyLifestyleCommand(
 
   const rangeText = summary.startDate && summary.endDate ? `${summary.startDate} → ${summary.endDate}` : "直近";
 
-  const blocks = createWeeklyReportBlocks({
+  // Generate heatmap SVG -> PNG
+  const svg = heatmapSvg(hourly, {
+    title: `Lifestyle Timeband (JST) — ${summary.startDate} → ${summary.endDate}`,
+    subtitle: "Green=active, Gray=inactive • Rows=hour(JST) • Cols=day",
+  });
+
+  const png = svgToPng(svg, { width: 1400, background: "#0b1220" });
+
+  // Post a single message that contains both the image preview and the full report text.
+  // This is the most reliable way to keep the image visible "inside the report message".
+  const initialComment = createWeeklyReportMrkdwn({
     rangeText,
     totalWorkSeconds: summary.totalNotAfkSeconds,
     avgWorkSecondsPerDay: summary.avgNotAfkSecondsPerDay,
     projectRanking,
     avgWakeTime,
     avgSleepTime,
-    imageUrl,
-    imageFileId: fileId || undefined,
-    imageAltText: "Weekly activity heatmap (JST)",
-    imageTitle: "Weekly Heatmap (JST)",
-    imageFilePermalink: filePermalink,
     analysis: weeklyAnalysis,
   });
 
-  const slackResult = await slackSender(deps.slackConfig, {
-    text: `Weekly Report (${rangeText})`,
-    blocks,
+  const uploadResult = await uploader(deps.uploadConfig, {
+    filename: `weekly-activity-${summary.startDate}-${summary.endDate}.png`,
+    title: `Weekly Activity Graph (${summary.startDate} → ${summary.endDate}).png`,
+    initialComment,
+    mimeType: "image/png",
+    content: png,
   });
 
-  if (slackResult.isErr()) {
-    return err({ type: "slack_error", message: "Failed to send weekly report to Slack", cause: slackResult.error });
+  if (uploadResult.isErr()) {
+    return err({ type: "slack_upload_error", message: "Failed to upload graph to Slack", cause: uploadResult.error });
   }
+
+  const fileId = uploadResult.value.fileId ?? "";
+  const filePermalink = uploadResult.value.permalink;
+  const uploadPermalinkPublic = uploadResult.value.permalinkPublic;
+
+  // Log file info for debugging
+  logger.debug("File upload result", {
+    fileId: fileId || "(empty)",
+    hasPermalink: !!filePermalink,
+    hasPermalinkPublic: !!uploadPermalinkPublic,
+  });
 
   return ok(undefined);
 }

@@ -38,6 +38,60 @@ export type WeeklyReportBlocksInput = {
   analysis: WeeklyAnalysisResult;
 };
 
+/**
+ * Build a Slack mrkdwn text for posting as `initial_comment` on a file upload.
+ * This avoids reliance on image blocks that require publicly fetchable URLs.
+ */
+export function createWeeklyReportMrkdwn(input: WeeklyReportBlocksInput): string {
+  const lines: string[] = [];
+
+  const sep = "──────────";
+
+  lines.push(`*📊 Weekly Report — ${input.rangeText}*`);
+  lines.push(sep);
+  lines.push(
+    `*⏱️ 週間稼働時間*: ${formatDuration(Math.round(input.totalWorkSeconds))}\n` +
+      `*📈 平均稼働時間/日*: ${formatDuration(Math.round(input.avgWorkSecondsPerDay))}\n` +
+      `*☀️ 平均起床時間*: ${input.avgWakeTime ?? "-"}\n` +
+      `*🌙 平均就寝時間*: ${input.avgSleepTime ?? "-"}`,
+  );
+
+  if (input.projectRanking.length > 0) {
+    lines.push("\n" + sep);
+    lines.push("*💻 プロジェクト別ランキング*");
+    for (const [i, p] of input.projectRanking.slice(0, 5).entries()) {
+      const medal =
+        i === 0 ? "🥇"
+        : i === 1 ? "🥈"
+        : i === 2 ? "🥉"
+        : `${i + 1}.`;
+      lines.push(`${medal} *${p.project}*: ${formatDuration(Math.round(p.seconds))}`);
+    }
+  }
+
+  lines.push("\n" + sep);
+  lines.push(`*🔥 ${input.analysis.title}*`);
+  lines.push(input.analysis.summary);
+
+  if (input.analysis.insights.length > 0) {
+    lines.push("");
+    lines.push("*🧠 AIの分析*");
+    for (const t of input.analysis.insights) {
+      lines.push(`• ${t}`);
+    }
+  }
+
+  lines.push("\n" + sep);
+  lines.push(`✅ *来週のアクション*\n${input.analysis.nextAction}`);
+  lines.push("_Timezone: JST_");
+
+  // Keep within a conservative limit for initial_comment
+  const text = lines.join("\n").trim();
+  const maxChars = 3500;
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars - 3) + "...";
+}
+
 export function createWeeklyReportBlocks(input: WeeklyReportBlocksInput): SlackBlock[] {
   const blocks: SlackBlock[] = [];
 

@@ -16,7 +16,12 @@
 
 - **Lint**: ESLint + `typescript-eslint`（`eslint.config.ts`）
 - **Format**: Prettier（import organize / oxc / tailwind プラグイン）
-- **macOS automation (typed)**: JXA（`@jxa/run`）を使い、Bun + TypeScript から型安全に osascript/JXA を実行する（参考: `https://github.com/JXA-userland/JXA` / `https://github.com/JXA-userland/JXA/tree/master/packages/@jxa/run`）
+- **Result / Error handling**: `neverthrow`（境界I/Oでの失敗を `Result` として返す）
+- **Validation**: `zod` + `@t3-oss/env-core`（`src/env.ts` で環境変数を型付け + 実行時検証）
+- **Slack**: `@slack/webhook`（Incoming Webhook）+ Slack Web API（ファイルアップロード等）
+- **AI**: `openai`（JSON 形式応答を前提にしたレポート生成。未設定時はフォールバック）
+- **SVG → PNG**: `@resvg/resvg-js`（Slack での画像プレビューのため PNG 化）
+- **macOS 通知**: `osascript` を `Bun.spawn` で実行し、通知を送る（`src/libs/notifier.ts`）
 
 > 依存ライブラリは “開発パターンに影響するもの” のみを記録し、全依存の列挙はしない。
 
@@ -48,13 +53,16 @@
 ```bash
 bun install
 
-# Run entrypoint
-bun run index.ts
+# Run (tick)
+bun run tick
+
+# Weekly report (posts to Slack; requires bot token/channel id)
+bun run weekly-report
 
 # Lint / format / typecheck (scripts)
 bun run lint
 bun run format
-bun run type-check
+bun run typecheck
 ```
 
 ## Key Technical Decisions
@@ -62,7 +70,8 @@ bun run type-check
 - **Bun を標準ランタイムにする**: 開発体験と実行環境の単純化（Node/npm 前提にしない）
 - **常駐プロセスを避ける設計**: 1回の tick 実行を安全に再実行できるよう、状態管理と冪等性を重視する
 - **外部依存の抽象化（DI）**: ActivityWatch や通知などの I/O を境界に閉じ、テストでは差し替える
-- **macOS 通知/自動化は型安全に扱う**: OS 側の操作（osascript 等）は薄いラッパに閉じ、境界で入力/出力を検証する（テストでは実装を差し替える）
+- **macOS 通知は薄いラッパに閉じる**: OS 側の操作（`osascript`）は `src/libs/notifier.ts` に閉じ、テストではインメモリ notifier を差し替える
+- **環境変数は境界で検証する**: `src/env.ts` で型付け・検証し、アプリ内で生の `process.env` / `Bun.env` を直接参照しない
 
 ---
 

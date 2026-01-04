@@ -22,6 +22,11 @@ describe("uploadSlackFile", () => {
 
       if (u === "https://slack.com/api/files.completeUploadExternal") {
         expect(init?.method).toBe("POST");
+        const rawBody = init?.body as unknown;
+        const bodyString = rawBody instanceof URLSearchParams ? rawBody.toString() : String(rawBody ?? "");
+        const params = new URLSearchParams(bodyString);
+        expect(params.get("channel_id")).toBe("C123");
+        expect(params.get("initial_comment")).toBe("hello");
         return new Response(
           JSON.stringify({ ok: true, files: [{ id: "F123", permalink: "https://slack.example.com/f/1" }] }),
           {
@@ -36,7 +41,7 @@ describe("uploadSlackFile", () => {
 
     const result = await uploadSlackFile(
       { botToken: "xoxb-test", channelId: "C123" },
-      { filename: "test.svg", mimeType: "image/svg+xml", content: "<svg/>" },
+      { filename: "test.svg", mimeType: "image/svg+xml", content: "<svg/>", initialComment: "hello" },
       { fetchFn },
     );
 

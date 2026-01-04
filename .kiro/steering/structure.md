@@ -12,25 +12,25 @@
 
 **Location**: `/src/`  
 **Purpose**: プロダクト本体の実装を置く（CLI / libs / utils を含む）  
-**Example**: `src/cli.ts`, `src/libs/aw/api.ts`
+**Example**: `src/main.ts`, `src/cli.ts`, `src/libs/activity-watch.ts`
 
 ### CLI
 
-**Location**: `/src/cli.ts`  
-**Purpose**: CLI のエントリポイント（tick 実行の起点）。引数解析→ジョブ評価→通知→終了を担当する  
-**Example**: `bun run src/cli.ts`
+**Location**: `/src/main.ts`, `/src/cli.ts`  
+**Purpose**: `main.ts` がジョブ登録と依存（env）解決を行い、`cli.ts` が引数解析とコマンドディスパッチを担当する  
+**Example**: `bun run tick`, `bun run install-service`
 
 ### Utilities
 
 **Location**: `/src/utils/`  
 **Purpose**: 依存の少ない汎用処理（日時/フォーマット/小さな変換など）  
-**Example**: `src/utils/dateRange.ts`
+**Example**: `src/utils/date-utils.ts`
 
 ### Libraries (integration / domain modules)
 
 **Location**: `/src/libs/`  
 **Purpose**: 外部サービスやドメイン境界を含むモジュールを配置する（テストしやすい API に整える）  
-**Example**: `src/libs/aw/api.ts`（ActivityWatch API wrapper）
+**Example**: `src/libs/activity-watch.ts`（ActivityWatch API wrapper）, `src/libs/slack-file-upload.ts`
 
 ### Tests
 
@@ -42,13 +42,11 @@
 
 **Location**: `/scripts/`  
 **Purpose**: 開発用スクリプト（生成/変換/一括処理など）。プロダクト本体の依存関係を増やさない  
-**Example**: `scripts/dev.ts`
+**Example**: `scripts/oneshot.ts`
 
-### Legacy (temporary)
+### Legacy (historical note)
 
-**Location**: `/mcp_code/`  
-**Purpose**: 一時的に取り込まれた ActivityWatch 向け MCP サーバ/ツール群。`src/` へ移植（コピペ）後に削除する  
-**Example**: `mcp_code/index.ts`, `mcp_code/query.ts`
+過去の移行用ディレクトリを想定して `tsconfig.json` が `mcp_code/**/*` を exclude している。現在ディレクトリが存在しない場合、実装のパターンとしては「古い取り込み物は `src/` に統合し、不要になったら削除する」を優先する。
 
 ### Kiro specs / steering
 
@@ -62,7 +60,7 @@
 
 ## Naming Conventions
 
-- **Files**: `camelCase.ts`（例: `getSettings.ts`）, テストは `*.test.ts`
+- **Files**: `kebab-case.ts`（例: `weekly-lifestyle-command.ts`）, テストは `*.test.ts`
 - **Exports**: 目的が明確な命名を優先（例: MCP tool は `activitywatch_*_tool`）
 - **Tool names**: 外部公開される名前は安定させる（例: `"activitywatch_run_query"`）
 
@@ -74,6 +72,8 @@ import { activitywatch_run_query_tool } from "./query.js";
 ```
 
 > `src/` 配下では、可能な限り “依存方向” を単純に保つ（CLI → libs/utils へ依存し、逆依存は作らない）
+
+補足: `tsconfig.json` では `allowImportingTsExtensions: true` を有効にしており、`src/` 内の相対 import は `.ts` 拡張子を明示する方針を採る（例: `import { runCli } from "./cli.ts"`）。
 
 ## Code Organization Principles
 

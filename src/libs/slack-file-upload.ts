@@ -149,6 +149,10 @@ export async function uploadSlackFile(
   if (config.channelId) {
     completeBody.channel_id = config.channelId;
   }
+  // Include initial_comment if provided (used as the message text when sharing to a channel)
+  if (input.initialComment && input.initialComment.trim() !== "") {
+    completeBody.initial_comment = input.initialComment;
+  }
 
   const completeRes = await fetchFn("https://slack.com/api/files.completeUploadExternal", {
     method: "POST",

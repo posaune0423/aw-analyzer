@@ -15,6 +15,11 @@ export type SlackConfig = {
   iconEmoji?: string;
 };
 
+export type SlackWebApiConfig = {
+  botToken: string;
+  channelId: string;
+};
+
 // Block Kit types
 export type HeaderBlock = {
   type: "header";
@@ -246,6 +251,61 @@ export async function sendSlackMessage(
   }
 }
 
+type ChatPostMessageResponse = { ok: true } | { ok: false; error?: string };
+
+export async function postSlackMessageWebApi(
+  config: SlackWebApiConfig,
+  message: { text: string; blocks?: SlackBlock[] },
+  deps: { fetchFn?: typeof fetch } = {},
+): Promise<Result<void, SlackError>> {
+  const fetchFn = deps.fetchFn ?? fetch;
+
+  // Validate blocks before sending
+  if (message.blocks) {
+    const validation = validateBlocks(message.blocks);
+    if (!validation.valid) {
+      const errorMsg = `Block validation failed: ${validation.errors.join("; ")}`;
+      logger.error("Slack block validation failed", errorMsg);
+      return err({ type: "slack_error", message: errorMsg });
+    }
+  }
+
+  if (!config.botToken) return err({ type: "slack_error", message: "Slack bot token is required" });
+  if (!config.channelId) return err({ type: "slack_error", message: "Slack channel id is required" });
+
+  try {
+    const res = await fetchFn("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.botToken}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        channel: config.channelId,
+        text: message.text,
+        blocks: message.blocks,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return err({ type: "slack_error", message: `chat.postMessage HTTP ${res.status}: ${text}` });
+    }
+
+    const json = (await res.json().catch(() => ({ ok: false }))) as ChatPostMessageResponse;
+    if (!json.ok) {
+      return err({ type: "slack_error", message: `chat.postMessage: ${json.error ?? "unknown_error"}` });
+    }
+
+    logger.debug("Slack message sent (Web API)");
+    return ok(undefined);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown error";
+    logger.error("Slack send failed (Web API)", msg);
+    return err({ type: "slack_error", message: msg });
+  }
+}
+
 // ============================================================================
 // Block Kit Builders
 // ============================================================================
@@ -313,7 +373,9 @@ export function imageBlock(input: {
 
   // Determine if we should use image_url or slack_file
   // If imageUrl is a slack-files.com URL, use slack_file instead
+  // However, files-pri URLs are private and require authentication, so prefer fileId
   const isSlackFileUrl = input.imageUrl?.includes("slack-files.com") || input.imageUrl?.includes("files.slack.com");
+  const isPrivateSlackUrl = input.imageUrl?.includes("files-pri");
 
   const block: ImageBlock = {
     type: "image",
@@ -324,17 +386,21 @@ export function imageBlock(input: {
 
   let validSource = false;
 
-  if (isSlackFileUrl && input.imageUrl) {
-    // Use slack_file with url for Slack file URLs
+  // If fileId is provided, use it (most reliable, works for both private and public files)
+  if (input.slackFileId) {
+    block.slack_file = { id: input.slackFileId };
+    validSource = true;
+  } else if (isSlackFileUrl && input.imageUrl) {
+    // Use slack_file with url for Slack file URLs (including files-pri)
+    // Slack Block Kit can handle files-pri URLs in slack_file.url context
     block.slack_file = { url: input.imageUrl };
     validSource = true;
+    if (isPrivateSlackUrl) {
+      logger.debug(`Using private Slack URL (files-pri) as slack_file.url: ${input.imageUrl}`);
+    }
   } else if (input.slackFileUrl) {
     // Use slack_file with url
     block.slack_file = { url: input.slackFileUrl };
-    validSource = true;
-  } else if (input.slackFileId) {
-    // Use slack_file with id
-    block.slack_file = { id: input.slackFileId };
     validSource = true;
   } else if (input.imageUrl) {
     // Use image_url for public URLs

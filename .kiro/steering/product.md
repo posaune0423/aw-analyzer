@@ -2,7 +2,7 @@
 
 aw-analyzer は、macOS 上で定期的に起動される CLI（tick 実行）として動作し、ActivityWatch 等の活動データからメトリクスを算出して条件に応じた通知を行うツールである。運用は「plist 1枚・tick 1本」を基本とし、常駐プロセスを必要としない。
 
-現状のリポジトリには ActivityWatch と対話するための MCP サーバ実装（`mcp_code/`）も含まれており、今後の CLI 実装で再利用できる “外部データ取得” の部品として位置付ける。
+ActivityWatch のデータ取得は `src/libs/activity-watch.ts` に閉じ、ジョブ（`src/jobs/*`）や週次レポート（`weekly-report`）がこの API を利用して分析/通知を行う。Slack 連携や OpenAI による分析はオプションであり、未設定時はローカルで完結するフォールバックを優先する。
 
 ## Core Capabilities
 
@@ -11,12 +11,14 @@ aw-analyzer は、macOS 上で定期的に起動される CLI（tick 実行）�
 - **通知の抽象化**: Notifier を差し替え可能にし、通知文（タイトル/本文/音など）を生成する
 - **通知抑制（cooldown）/冪等性**: 連発を防ぎ、日次などの “同一単位での重複” を避ける
 - **外部依存なしでの検証**: Provider/Notifier を差し替え、fixture 入力で決定的にテストできる
+- **週次レポート**: 直近 N 日の AFK/Not-AFK を可視化し（ヒートマップ画像）、必要に応じて AI の所見を付けて Slack に投稿する
 
 ## Target Use Cases
 
 - **セルフモニタリング**: ActivityWatch のデータから稼働/AFK/深夜稼働/連続作業などを要約し、改善のきっかけを得る
 - **ルールベース通知**: 時刻・条件・メトリクス閾値に応じて「必要なときだけ」通知する
 - **ローカル運用前提**: 個人データを外部に送らず、macOS のスケジューラ（Launchd/plist）で運用する
+  - 例外: 任意で Slack 投稿 / OpenAI 分析を有効化できる（環境変数が未設定なら実行しない）
 
 ## Value Proposition
 
