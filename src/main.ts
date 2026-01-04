@@ -19,7 +19,7 @@ async function main() {
     // Configure jobs
     const jobs: Job[] = [
       createDailySummaryJob({
-        targetHour: 21, // 9 PM
+        targetHour: 15, // 3 PM
         targetMinute: 0,
       }),
 
@@ -29,7 +29,7 @@ async function main() {
       }),
 
       createReportJob({
-        targetHour: 22, // 10 PM
+        targetHour: 15, // 3 PM
         analyzerConfig: env.OPENAI_API_KEY ? { apiKey: env.OPENAI_API_KEY } : undefined,
         slackConfig: { webhookUrl: env.SLACK_WEBHOOK_URL },
       }),

@@ -81,6 +81,22 @@ describe("parseArgs", () => {
         expect(result.value.command).toBe("weekly-report");
       }
     });
+
+    test("parses set-schedule command", () => {
+      const result = parseArgs(["bun", "cli.ts", "set-schedule"]);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.command).toBe("set-schedule");
+      }
+    });
+
+    test("parses remove-schedule command", () => {
+      const result = parseArgs(["bun", "cli.ts", "remove-schedule"]);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.command).toBe("remove-schedule");
+      }
+    });
   });
 
   describe("flag parsing", () => {

@@ -17,6 +17,8 @@
     "tick": "bun src/main.ts tick",
     "install-service": "bun src/main.ts install",
     "uninstall-service": "bun src/main.ts uninstall",
+    "set-schedule": "bun src/main.ts set-schedule",
+    "remove-schedule": "bun src/main.ts remove-schedule",
     "reset": "bun src/main.ts reset",
     "help": "bun src/main.ts help",
     "version": "bun src/main.ts version",

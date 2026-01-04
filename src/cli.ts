@@ -14,7 +14,16 @@ import { createStateStore } from "./utils/state-store.ts";
 // Types
 // ============================================================================
 
-export type CliCommand = "tick" | "help" | "version" | "reset" | "install" | "uninstall" | "weekly-report";
+export type CliCommand =
+  | "tick"
+  | "weekly-report"
+  | "help"
+  | "version"
+  | "reset"
+  | "install"
+  | "uninstall"
+  | "set-schedule"
+  | "remove-schedule";
 
 export type CliArgs = {
   command: CliCommand;
@@ -50,6 +59,8 @@ Commands:
   reset       Clear state store and reset to initial state
   install     Install launchd service for automatic execution
   uninstall   Remove launchd service
+  set-schedule    Install daily/weekly launchd schedules (calendar-based)
+  remove-schedule Remove daily/weekly launchd schedules
 
 Options:
   --verbose     Enable verbose logging
@@ -57,7 +68,7 @@ Options:
   --config      Path to configuration file
   --interval    Interval in minutes for launchd (default: 5, for install only)
   --days        Number of days for weekly-report (default: 7, max: 31)
-  --dry-run     Show what would be done without making changes (for install/uninstall)`;
+  --dry-run     Show what would be done without making changes (for install/uninstall/schedule)`;
 
 const VERSION = "0.1.0";
 const DEFAULT_STATE_PATH = `${process.env.HOME ?? "~"}/.aw-analyzer/state.json`;
@@ -83,7 +94,17 @@ export function parseArgs(args: string[]): Result<CliArgs, CliError> {
   }
 
   const command = userArgs[0];
-  const validCommands: CliCommand[] = ["tick", "weekly-report", "help", "version", "reset", "install", "uninstall"];
+  const validCommands: CliCommand[] = [
+    "tick",
+    "weekly-report",
+    "help",
+    "version",
+    "reset",
+    "install",
+    "uninstall",
+    "set-schedule",
+    "remove-schedule",
+  ];
 
   if (!validCommands.includes(command as CliCommand)) {
     return err({ type: "invalid_command", message: `Unknown command: ${command}`, usage: USAGE });
@@ -229,6 +250,35 @@ async function handleUninstall(args: CliArgs): Promise<CliResult> {
   return { type: "ok", message: result.value };
 }
 
+async function handleSetSchedule(args: CliArgs): Promise<CliResult> {
+  const { installSchedules } = await import("./launchd.ts");
+  const result = await installSchedules({
+    dryRun: args.dryRun ?? false,
+    verbose: args.verbose ?? false,
+  });
+
+  if (result.isErr()) {
+    logger.error("set-schedule failed", result.error.message);
+    return { type: "error", error: { type: "fatal_error", message: result.error.message }, exitCode: 1 };
+  }
+
+  return { type: "ok", message: result.value };
+}
+
+async function handleRemoveSchedule(args: CliArgs): Promise<CliResult> {
+  const { uninstallSchedules } = await import("./launchd.ts");
+  const result = await uninstallSchedules({
+    dryRun: args.dryRun ?? false,
+  });
+
+  if (result.isErr()) {
+    logger.error("remove-schedule failed", result.error.message);
+    return { type: "error", error: { type: "fatal_error", message: result.error.message }, exitCode: 1 };
+  }
+
+  return { type: "ok", message: result.value };
+}
+
 // ============================================================================
 // Main Entry Point
 // ============================================================================
@@ -264,6 +314,10 @@ export async function runCli(args: string[], jobs: Job[] = [], deps: RunCliDeps 
       return handleInstall(cliArgs);
     case "uninstall":
       return handleUninstall(cliArgs);
+    case "set-schedule":
+      return handleSetSchedule(cliArgs);
+    case "remove-schedule":
+      return handleRemoveSchedule(cliArgs);
   }
 }
 
